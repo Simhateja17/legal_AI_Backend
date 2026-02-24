@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, Field
@@ -16,6 +17,7 @@ class ChatRequest(BaseModel):
     top_k: int | None = Field(None, ge=1, le=50)
     similarity_threshold: float | None = Field(None, ge=0.0, le=1.0)
     metadata_filter: dict | None = None
+    mode: Literal["normal", "student", "lawyer"] = "normal"
 
 
 class SearchRequest(BaseModel):

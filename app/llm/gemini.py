@@ -13,10 +13,10 @@ logger = structlog.get_logger(__name__)
 
 
 class GeminiProvider(BaseLLMProvider):
-    def __init__(self) -> None:
+    def __init__(self, model_name: str = "gemini-2.0-flash") -> None:
         settings = get_settings()
         genai.configure(api_key=settings.google_api_key)
-        self._model = genai.GenerativeModel("gemini-2.0-flash")
+        self._model_name = model_name
 
     def _to_gemini_history(
         self, messages: list[dict[str, str]]
@@ -57,7 +57,7 @@ class GeminiProvider(BaseLLMProvider):
             system_text, history, user_msg = self._to_gemini_history(messages)
 
             model = genai.GenerativeModel(
-                "gemini-2.0-flash",
+                self._model_name,
                 system_instruction=system_text,
                 generation_config=genai.GenerationConfig(
                     temperature=temperature,
@@ -85,7 +85,7 @@ class GeminiProvider(BaseLLMProvider):
             system_text, history, user_msg = self._to_gemini_history(messages)
 
             model = genai.GenerativeModel(
-                "gemini-2.0-flash",
+                self._model_name,
                 system_instruction=system_text,
                 generation_config=genai.GenerationConfig(
                     temperature=temperature,
