@@ -5,7 +5,7 @@ from typing import Literal
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
-PROJECT_ROOT = Path(__file__).resolve().parents[3]  # legal_ai_rag/
+PROJECT_ROOT = Path(__file__).resolve().parents[2]  # backend/
 
 
 class Settings(BaseSettings):
