@@ -1,7 +1,7 @@
 fastapi==0.115.6
 uvicorn[standard]==0.34.0
-pydantic==2.10.4
-pydantic-settings==2.7.1
+pydantic==2.11.3
+pydantic-settings==2.8.1
 openai==1.59.3
 google-generativeai==0.8.4
 supabase==2.11.0
@@ -12,4 +12,3 @@ sse-starlette==2.2.1
 python-dotenv==1.0.1
 structlog==24.4.0
 tiktoken==0.8.0
-eval-type-backport==0.3.1
