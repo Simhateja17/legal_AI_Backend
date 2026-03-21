@@ -32,14 +32,14 @@ class Settings(BaseSettings):
     google_api_key: str = ""
 
     # Application
-    llm_provider: Literal["azure", "gemini"] = "azure"
+    llm_provider: Literal["azure", "gemini"] = "gemini"
     log_level: str = "INFO"
     environment: str = "development"
 
     # RAG defaults
-    retrieval_top_k: int = 8
+    retrieval_top_k: int = 5
     similarity_threshold: float = 0.3
-    max_context_tokens: int = 6000
+    max_context_tokens: int = 4000
     max_conversation_turns: int = 10
     enable_guard: bool = True
 

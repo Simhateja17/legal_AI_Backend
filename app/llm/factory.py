@@ -14,6 +14,6 @@ def create_llm_provider() -> BaseLLMProvider:
 
     if provider == "gemini":
         from app.llm.gemini import GeminiProvider
-        return GeminiProvider()
+        return GeminiProvider(model_name="gemini-3-flash-preview")
 
     raise LLMProviderNotFoundError(provider)

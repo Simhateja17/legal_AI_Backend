@@ -51,6 +51,7 @@ async def search_documents(
     try:
         pool = await get_pool()
         async with pool.acquire() as conn:
+            await conn.execute("SET hnsw.ef_search = 40;")
             if metadata_filter:
                 query = """
                     SELECT
