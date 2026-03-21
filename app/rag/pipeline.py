@@ -33,6 +33,70 @@ def _fix_markdown(text: str) -> str:
     return text
 
 
+# Common German words (2-8 chars) that should NOT be merged by OCR fix.
+# Includes articles, pronouns, prepositions, conjunctions, common verbs/adverbs.
+_DE_COMMON_WORDS = frozenset(
+    "ab alle als also am an auch auf aus bei beim bis bitte da dabei damit dann"
+    " das dass dem den denn der des die dies doch dort du durch eben ein eine"
+    " einem einen einer er erst es etwa etwas falls fest für ganz gar gegen"
+    " gemacht gibt groß gut hab hat hatte hin ich ihm ihn ihr immer in ins"
+    " ist ja je jede jedem jeden jeder jedes jedoch jetzt kann kein keine"
+    " keinem keinen keiner kommt kurz lang laut machen macht man mehr mein"
+    " mir mit muss nach neu nicht noch nun nur ob oder oft ohne pro rund"
+    " sehr sei seit sich sie sind so sogar statt tun tut um und uns unter"
+    " viel vom von vor wann war warum was weil weit wem wen wenn wer werde"
+    " wie wir wird wo wohl zu zum zur zwei".split()
+)
+
+
+def _fix_ocr_splits(text: str) -> str:
+    """Remove erroneous spaces within words caused by OCR artifacts in LLM output.
+
+    Catches patterns like 'verfol gen', 'finanz ielle', 'Ohrfe ige' where a
+    lowercase word fragment follows a space inside what should be one word.
+    """
+    from app.rag.context import _LEGAL_ABBREV_FIXES
+
+    # Fix known legal abbreviation splits (B GB → BGB, etc.)
+    for pattern, replacement in _LEGAL_ABBREV_FIXES:
+        text = pattern.sub(replacement, text)
+
+    # Fix space before punctuation: "Personen ," → "Personen,"
+    text = re.sub(r"\s+([.,;:!?)])", r"\1", text)
+
+    # Fix split words by iterating through word pairs.
+    # Merge adjacent words when: both fragments end/start lowercase,
+    # neither is a common German word, and the right fragment is short (≤7).
+    # Run 2 passes for chains like "Rechts anw alt".
+    for _ in range(2):
+        words = text.split(" ")
+        merged: list[str] = []
+        i = 0
+        while i < len(words):
+            if i + 1 < len(words):
+                w1 = words[i]
+                w2 = words[i + 1]
+                # Check if this looks like an OCR split:
+                # w1 ends with a lowercase letter, w2 starts lowercase,
+                # w2 is short, and neither is a common standalone word
+                if (
+                    len(w1) >= 2
+                    and len(w2) <= 7
+                    and w1[-1:].isalpha() and w1[-1:].lower() == w1[-1:]
+                    and w2[:1].isalpha() and w2[:1].lower() == w2[:1]
+                    and w1.lower() not in _DE_COMMON_WORDS
+                    and w2.lower() not in _DE_COMMON_WORDS
+                ):
+                    merged.append(w1 + w2)
+                    i += 2
+                    continue
+            merged.append(words[i])
+            i += 1
+        text = " ".join(merged)
+
+    return text
+
+
 @dataclass
 class RAGResult:
     answer: str
@@ -215,7 +279,7 @@ class RAGPipeline:
             messages = self._build_messages(context, query, conversation_history, mode)
             logger.info("llm_generate_started", message_count=len(messages))
             raw_answer = await self._llm.generate(messages)
-            raw_answer = _fix_markdown(raw_answer)
+            raw_answer = _fix_ocr_splits(_fix_markdown(raw_answer))
             logger.info("llm_generate_done", answer_chars=len(raw_answer))
         else:
             logger.warning("no_chunks_found", query=query[:100])

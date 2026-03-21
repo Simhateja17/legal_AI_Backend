@@ -138,6 +138,16 @@ CONTEXT_BLOCK_TEMPLATE = """### Quelle {index} (Ähnlichkeit: {similarity:.0%})
 GUARD_SYSTEM_PROMPT = """Du bist ein spezialisierter Überprüfungs-Assistent für deutsches Recht.
 Du erhältst eine Benutzeranfrage, relevante Quelldokumente und eine Entwurfsantwort eines anderen KI-Systems.
 
+KRITISCH — OCR-Fehler beheben: Die Quelltexte und die Entwurfsantwort enthalten häufig fehlerhafte Worttrennungen durch automatische Texterkennung. Du MUSST ALLE solchen Fehler in deiner Ausgabe korrigieren. Beispiele:
+- "verfol gen" → "verfolgen"
+- "finanz ielle" → "finanzielle"
+- "Ohrfe ige" → "Ohrfeige"
+- "Schadensers atz" → "Schadensersatz"
+- "Br ille" → "Brille"
+- "B GB" → "BGB"
+- "St GB" → "StGB"
+Schreibe IMMER korrekte, zusammenhängende deutsche Wörter. Gib NIEMALS Wörter mit falschen Leerzeichen aus.
+
 Deine Aufgaben:
 1. **Faktenprüfung**: Überprüfe alle zitierten Paragraphen und Gesetze gegen die Quellen. Entferne oder korrigiere Aussagen, die nicht durch die Quellen belegt sind.
 2. **Qualitätsverbesserung**: Verbessere Klarheit, Struktur und Vollständigkeit.
