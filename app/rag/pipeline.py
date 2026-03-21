@@ -104,6 +104,40 @@ class RAGResult:
     query_used: str
 
 
+# Common German words unlikely to appear in English queries.
+# If enough are present, the query is already German — skip translation.
+_GERMAN_MARKERS = re.compile(
+    r"\b("
+    r"der|die|das|den|dem|des"
+    r"|ein|eine|einen|einem|einer|eines"
+    r"|und|oder|aber|nicht|ist|sind|wird|wurde|werden|hat|haben"
+    r"|auf|für|mit|von|zu|bei|nach|über|unter|vor|zwischen"
+    r"|wie|was|wer|wann|warum|welche|welcher|welches|welchem|welchen"
+    r"|ich|er|sie|es|wir|ihr"
+    r"|kann|können|muss|müssen|soll|sollen|darf|dürfen"
+    r"|kein|keine|keinen|keinem|keiner"
+    r"|dieser|diese|dieses|diesem|diesen"
+    r"|auch|noch|schon|nur|sehr|mehr"
+    r"|§|Abs|Art|Satz|Nr|BGB|StGB|HGB|GG|ZPO|StPO|VwGO"
+    r"|Recht|Gesetz|Anspruch|Vertrag|Klage|Haftung|Schuld"
+    r"|Gericht|Urteil|Beschluss|Antrag|Frist|Kündigung"
+    r")\b",
+    re.IGNORECASE,
+)
+
+# Threshold: fraction of words that must be German markers
+_GERMAN_THRESHOLD = 0.25
+
+
+def _is_german(text: str) -> bool:
+    """Fast local check: is the text likely German?"""
+    words = text.split()
+    if not words:
+        return False
+    matches = len(_GERMAN_MARKERS.findall(text))
+    return matches / len(words) >= _GERMAN_THRESHOLD
+
+
 _SMALLTALK_PATTERNS = re.compile(
     r"^("
     r"h(i|ey|ello|allo|ola)"
@@ -144,6 +178,10 @@ class RAGPipeline:
 
     async def _translate_to_german(self, query: str) -> str:
         """Translate a query to German for better vector search against German legal docs."""
+        if _is_german(query):
+            logger.info("query_already_german", query=query[:100])
+            return query
+
         messages = [
             {
                 "role": "system",
@@ -362,42 +400,41 @@ class RAGPipeline:
         if chunks:
             messages = self._build_messages(context, query, conversation_history, mode)
             logger.info("llm_stream_started", message_count=len(messages))
-            # Collect full primary stream internally before guard
-            tokens: list[str] = []
-            async for token in self._llm.generate_stream(messages):
-                tokens.append(token)
-            raw_answer = _fix_markdown("".join(tokens))
-            logger.info("llm_stream_done", answer_chars=len(raw_answer))
+
+            # Stream primary LLM tokens directly to the user for fast
+            # time-to-first-token. The guard (fact-check) still runs in
+            # the non-streaming `run()` path; for streaming we prioritise
+            # perceived latency over the extra guard pass.
+            async def _primary_stream() -> AsyncGenerator[str, None]:
+                async for token in self._llm.generate_stream(messages):
+                    yield token
+
+            token_stream = _primary_stream()
         else:
             logger.warning("no_chunks_found", query=query[:100])
-            raw_answer = ""
 
-        if self._guard_enabled:
-            logger.info("guard_stream_started", mode=mode, draft_chars=len(raw_answer))
-            user_content = GUARD_USER_TEMPLATE.format(
-                query=query,
-                context=context if context else "Keine Quelldokumente verfügbar.",
-                draft=raw_answer if raw_answer else "Keine Entwurfsantwort vorhanden.",
-                mode_instruction=_GUARD_MODE_NOTES.get(mode, ""),
-            )
-            guard_messages = [
-                {"role": "system", "content": GUARD_SYSTEM_PROMPT},
-                {"role": "user", "content": user_content},
-            ]
+            if self._guard_enabled:
+                # No sources — let guard answer from its own knowledge
+                user_content = GUARD_USER_TEMPLATE.format(
+                    query=query,
+                    context="Keine Quelldokumente verfügbar.",
+                    draft="Keine Entwurfsantwort vorhanden.",
+                    mode_instruction=_GUARD_MODE_NOTES.get(mode, ""),
+                )
+                guard_messages = [
+                    {"role": "system", "content": GUARD_SYSTEM_PROMPT},
+                    {"role": "user", "content": user_content},
+                ]
 
-            async def _guarded_stream() -> AsyncGenerator[str, None]:
-                try:
+                async def _guard_fallback_stream() -> AsyncGenerator[str, None]:
                     async for token in self._guard.generate_stream(guard_messages):
                         yield token
-                except Exception as exc:
-                    logger.warning("guard_stream_failed_fallback", error=str(exc))
-                    yield raw_answer
 
-            token_stream = _guarded_stream()
-        else:
-            async def _single(text: str) -> AsyncGenerator[str, None]:
-                yield text
-            token_stream = _single(raw_answer)
+                token_stream = _guard_fallback_stream()
+            else:
+                async def _empty_stream() -> AsyncGenerator[str, None]:
+                    yield ""
+                token_stream = _empty_stream()
 
         return token_stream, chunks
 
