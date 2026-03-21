@@ -51,3 +51,30 @@ async def embed_query(text: str) -> list[float]:
     except Exception as exc:
         logger.error("embedding_failed", error=str(exc))
         raise EmbeddingError(str(exc)) from exc
+
+
+async def embed_batch(texts: list[str]) -> list[list[float]]:
+    """
+    Embed a batch of texts (up to 16) in a single API call.
+    Returns list of 1536-dim embeddings in the same order as input.
+    """
+    if not texts:
+        return []
+
+    settings = get_settings()
+    client = _get_client()
+
+    try:
+        response = await client.embeddings.create(
+            input=texts,
+            model=settings.azure_openai_embedding_deployment,
+        )
+        # API may return data out of order; sort by index
+        sorted_data = sorted(response.data, key=lambda d: d.index)
+        embeddings = [d.embedding for d in sorted_data]
+        logger.info("batch_embedding_generated", count=len(embeddings))
+        return embeddings
+
+    except Exception as exc:
+        logger.error("batch_embedding_failed", error=str(exc))
+        raise EmbeddingError(str(exc)) from exc
