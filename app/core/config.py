@@ -38,7 +38,7 @@ class Settings(BaseSettings):
 
     # RAG defaults
     retrieval_top_k: int = 8
-    similarity_threshold: float = 0.3
+    similarity_threshold: float = 0.2
     max_context_tokens: int = 6000
     max_conversation_turns: int = 10
     enable_guard: bool = True

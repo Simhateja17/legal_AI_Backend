@@ -26,7 +26,7 @@ class AzureOpenAIProvider(BaseLLMProvider):
         self,
         messages: list[dict[str, str]],
         temperature: float = 0.3,
-        max_tokens: int = 2048,
+        max_tokens: int = 8192,
     ) -> str:
         try:
             response = await self._client.chat.completions.create(
@@ -51,7 +51,7 @@ class AzureOpenAIProvider(BaseLLMProvider):
         self,
         messages: list[dict[str, str]],
         temperature: float = 0.3,
-        max_tokens: int = 2048,
+        max_tokens: int = 8192,
     ) -> AsyncGenerator[str, None]:
         try:
             stream = await self._client.chat.completions.create(

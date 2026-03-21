@@ -13,7 +13,7 @@ logger = structlog.get_logger(__name__)
 
 
 class GeminiProvider(BaseLLMProvider):
-    def __init__(self, model_name: str = "gemini-2.0-flash") -> None:
+    def __init__(self, model_name: str = "gemini-2.5-flash") -> None:
         settings = get_settings()
         genai.configure(api_key=settings.google_api_key)
         self._model_name = model_name
@@ -51,7 +51,7 @@ class GeminiProvider(BaseLLMProvider):
         self,
         messages: list[dict[str, str]],
         temperature: float = 0.3,
-        max_tokens: int = 2048,
+        max_tokens: int = 8192,
     ) -> str:
         try:
             system_text, history, user_msg = self._to_gemini_history(messages)
@@ -67,7 +67,10 @@ class GeminiProvider(BaseLLMProvider):
 
             chat = model.start_chat(history=history)
             response = await chat.send_message_async(user_msg or "")
-            content = response.text
+            try:
+                content = response.text
+            except (ValueError, AttributeError):
+                content = ""
             logger.info("llm_generation_completed", provider="gemini")
             return content
 
@@ -79,7 +82,7 @@ class GeminiProvider(BaseLLMProvider):
         self,
         messages: list[dict[str, str]],
         temperature: float = 0.3,
-        max_tokens: int = 2048,
+        max_tokens: int = 8192,
     ) -> AsyncGenerator[str, None]:
         try:
             system_text, history, user_msg = self._to_gemini_history(messages)
@@ -97,8 +100,12 @@ class GeminiProvider(BaseLLMProvider):
             response = await chat.send_message_async(user_msg or "", stream=True)
 
             async for chunk in response:
-                if chunk.text:
-                    yield chunk.text
+                try:
+                    if chunk.text:
+                        yield chunk.text
+                except (ValueError, AttributeError):
+                    # Final chunk may have finish_reason but no text Part
+                    continue
 
         except Exception as exc:
             logger.error("llm_stream_failed", provider="gemini", error=str(exc))

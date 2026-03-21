@@ -27,10 +27,12 @@ async def lifespan(app: FastAPI):
         environment=settings.environment,
         llm_provider=settings.llm_provider,
     )
+    # Don't block on database connection at startup
     try:
-        await get_pool()
+        import asyncio
+        asyncio.create_task(get_pool())
     except Exception as exc:
-        logger.warning("database_unavailable_at_startup", error=str(exc))
+        logger.warning("database_connection_async_task_failed", error=str(exc))
     yield
     await close_pool()
     logger.info("app_shutdown")

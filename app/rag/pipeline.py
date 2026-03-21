@@ -40,6 +40,29 @@ class RAGResult:
     query_used: str
 
 
+_SMALLTALK_PATTERNS = re.compile(
+    r"^("
+    r"h(i|ey|ello|allo|ola)"
+    r"|guten\s*(tag|morgen|abend)"
+    r"|moin"
+    r"|servus"
+    r"|grüß\s*gott"
+    r"|danke(schön|sehr)?"
+    r"|thanks?(\s*you)?"
+    r"|thank\s*you"
+    r"|how\s*are\s*you"
+    r"|wie\s*geht'?s?"
+    r"|what'?s\s*up"
+    r"|yo"
+    r"|good\s*(morning|evening|afternoon|night)"
+    r"|bye|goodbye|tschüss|ciao"
+    r"|ok(ay)?"
+    r"|yes|no|ja|nein"
+    r")[\s?!.,]*$",
+    re.IGNORECASE,
+)
+
+
 class RAGPipeline:
     """Core orchestrator: embed → retrieve → generate."""
 
@@ -50,6 +73,33 @@ class RAGPipeline:
         if self._guard_enabled:
             self._guard = GeminiProvider(model_name="gemini-3-flash-preview")
 
+    @staticmethod
+    def _is_smalltalk(query: str) -> bool:
+        """Return True if the query is a simple greeting or small-talk."""
+        return len(query.split()) < 10 and _SMALLTALK_PATTERNS.match(query.strip()) is not None
+
+    async def _translate_to_german(self, query: str) -> str:
+        """Translate a query to German for better vector search against German legal docs."""
+        messages = [
+            {
+                "role": "system",
+                "content": (
+                    "You are a translator. Translate the user's query into German. "
+                    "If the query is already in German, return it unchanged. "
+                    "Output ONLY the translated text, nothing else."
+                ),
+            },
+            {"role": "user", "content": query},
+        ]
+        try:
+            translated = await self._guard.generate(messages, temperature=0.0, max_tokens=256)
+            translated = translated.strip()
+            logger.info("query_translated", original=query[:100], translated=translated[:100])
+            return translated
+        except Exception as exc:
+            logger.warning("translation_failed_fallback", error=str(exc))
+            return query
+
     async def _retrieve(
         self,
         query: str,
@@ -58,7 +108,12 @@ class RAGPipeline:
         metadata_filter: dict | None = None,
     ) -> tuple[list[DocumentChunk], list[float]]:
         """Embed the query and retrieve relevant chunks."""
-        embedding = await embed_query(query)
+        # Translate to German for better similarity with German legal documents
+        if self._guard_enabled:
+            search_query = await self._translate_to_german(query)
+        else:
+            search_query = query
+        embedding = await embed_query(search_query)
         chunks = await search_documents(
             query_embedding=embedding,
             top_k=top_k,
@@ -136,6 +191,15 @@ class RAGPipeline:
             guard_enabled=self._guard_enabled,
         )
 
+        # Fast path: skip embedding + vector search for trivial greetings
+        if self._is_smalltalk(query):
+            logger.info("smalltalk_fast_path", query=query[:100])
+            if self._guard_enabled:
+                answer = await self._run_guard(query, "", "", mode)
+            else:
+                answer = ""
+            return RAGResult(answer=answer, sources=[], query_used=query)
+
         chunks, _ = await self._retrieve(
             query, top_k, similarity_threshold, metadata_filter
         )
@@ -158,7 +222,11 @@ class RAGPipeline:
             raw_answer = ""  # No sources — let guard answer from knowledge
 
         if self._guard_enabled:
-            answer = await self._run_guard(query, context, raw_answer, mode)
+            try:
+                answer = await self._run_guard(query, context, raw_answer, mode)
+            except Exception as exc:
+                logger.warning("guard_failed_fallback", error=str(exc))
+                answer = raw_answer
         else:
             answer = raw_answer
 
@@ -189,6 +257,32 @@ class RAGPipeline:
             history_turns=len(conversation_history) if conversation_history else 0,
             guard_enabled=self._guard_enabled,
         )
+
+        # Fast path: skip embedding + vector search for trivial greetings
+        if self._is_smalltalk(query):
+            logger.info("smalltalk_fast_path_stream", query=query[:100])
+            if self._guard_enabled:
+                user_content = GUARD_USER_TEMPLATE.format(
+                    query=query,
+                    context="Keine Quelldokumente verfügbar.",
+                    draft="Keine Entwurfsantwort vorhanden.",
+                    mode_instruction=_GUARD_MODE_NOTES.get(mode, ""),
+                )
+                guard_messages = [
+                    {"role": "system", "content": GUARD_SYSTEM_PROMPT},
+                    {"role": "user", "content": user_content},
+                ]
+
+                async def _smalltalk_guard_stream() -> AsyncGenerator[str, None]:
+                    async for token in self._guard.generate_stream(guard_messages):
+                        yield token
+
+                return _smalltalk_guard_stream(), []
+
+            async def _empty_stream() -> AsyncGenerator[str, None]:
+                yield ""
+
+            return _empty_stream(), []
 
         chunks, _ = await self._retrieve(
             query, top_k, similarity_threshold, metadata_filter
@@ -226,7 +320,16 @@ class RAGPipeline:
                 {"role": "system", "content": GUARD_SYSTEM_PROMPT},
                 {"role": "user", "content": user_content},
             ]
-            token_stream = self._guard.generate_stream(guard_messages)
+
+            async def _guarded_stream() -> AsyncGenerator[str, None]:
+                try:
+                    async for token in self._guard.generate_stream(guard_messages):
+                        yield token
+                except Exception as exc:
+                    logger.warning("guard_stream_failed_fallback", error=str(exc))
+                    yield raw_answer
+
+            token_stream = _guarded_stream()
         else:
             async def _single(text: str) -> AsyncGenerator[str, None]:
                 yield text

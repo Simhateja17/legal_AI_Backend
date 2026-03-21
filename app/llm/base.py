@@ -12,7 +12,7 @@ class BaseLLMProvider(ABC):
         self,
         messages: list[dict[str, str]],
         temperature: float = 0.3,
-        max_tokens: int = 2048,
+        max_tokens: int = 8192,
     ) -> str:
         """Generate a complete response from the given messages."""
         ...
@@ -22,7 +22,7 @@ class BaseLLMProvider(ABC):
         self,
         messages: list[dict[str, str]],
         temperature: float = 0.3,
-        max_tokens: int = 2048,
+        max_tokens: int = 8192,
     ) -> AsyncGenerator[str, None]:
         """Yield response tokens as they arrive."""
         ...
