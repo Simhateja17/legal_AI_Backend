@@ -71,7 +71,7 @@ class RAGPipeline:
         settings = get_settings()
         self._guard_enabled = settings.enable_guard
         if self._guard_enabled:
-            self._guard = GeminiProvider(model_name="gemini-3-flash-preview")
+            self._guard = GeminiProvider(model_name="gemini-3.1-flash-lite-preview")
 
     @staticmethod
     def _is_smalltalk(query: str) -> bool:
