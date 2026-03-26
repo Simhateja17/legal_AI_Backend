@@ -25,7 +25,7 @@ class Settings(BaseSettings):
     azure_openai_api_key: str
     azure_openai_endpoint: str
     azure_openai_api_version: str = "2024-10-21"
-    azure_openai_embedding_deployment: str = "text-embedding-3-small"
+    azure_openai_embedding_deployment: str = "text-embedding-3-small"  # unused (embeddings now via Gemini)
     azure_openai_chat_deployment: str = "gpt-4o-mini"
 
     # Google Gemini (optional)
@@ -35,6 +35,10 @@ class Settings(BaseSettings):
     llm_provider: Literal["azure", "gemini"] = "gemini"
     log_level: str = "INFO"
     environment: str = "development"
+    cors_origins: list[str] = [
+        "https://legal-ai-frontend-navy.vercel.app",
+        "http://localhost:3000",
+    ]
 
     # RAG defaults
     retrieval_top_k: int = 5
